@@ -1,0 +1,352 @@
+openapi: 3.0.3
+info:
+  title: Subscription API
+  version: "1.0.0"
+  description: API для работы с подписками
+
+paths:
+  /subscriptions:
+    post:
+      summary: Создать подписку
+      operationId: CreateSubscription
+      requestBody:
+        description: Параметры новой подписки
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateSubscriptionPayload"
+            examples:
+              example-1:
+                value:
+                  service_name: "Yandex Plus"
+                  price: 400
+                  user_id: "9010b6bc-c133-404f-a11e-47c8c6bff908"
+                  start_date: "08-2025"
+                  end_date: "10-2025"
+      responses:
+        "201":
+          description: Created - возвращает id созданной записи (в обёртке Response)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ResponseCreatedId"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "422":
+          $ref: "#/components/responses/ValidationError"
+        "500":
+          $ref: "#/components/responses/ServerError"
+
+    get:
+      summary: Список подписок (фильтрация по user_id и service_name, пагинация)
+      operationId: ListSubscriptions
+      parameters:
+        - in: query
+          name: user_id
+          schema:
+            type: string
+            format: uuid
+          description: Фильтр по user_id (uuid), если пусто - не фильтруем
+        - in: query
+          name: service_name
+          schema:
+            type: string
+          description: Фильтр по названию сервиса
+        - in: query
+          name: limit
+          schema:
+            type: integer
+            minimum: 0
+            default: 0
+          description: Лимит результатов (0 - без лимита)
+        - in: query
+          name: offset
+          schema:
+            type: integer
+            minimum: 0
+            default: 0
+          description: Смещение (offset)
+      responses:
+        "200":
+          description: Успех - возвращает массив подписок и total (в обёртке Response)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ResponseList"
+        "500":
+          $ref: "#/components/responses/ServerError"
+
+  /subscriptions/{id}:
+    get:
+      summary: Получить подписку по id
+      operationId: GetSubscription
+      parameters:
+        - $ref: "#/components/parameters/id"
+      responses:
+        "200":
+          description: Успех - данные подписки (в обёртке Response)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ResponseSubscription"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/ServerError"
+
+    put:
+      summary: Обновить подписку
+      operationId: UpdateSubscription
+      parameters:
+        - $ref: "#/components/parameters/id"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateSubscriptionPayload"
+            examples:
+              example-1:
+                value:
+                  service_name: "Yandex Plus"
+                  price: 450
+                  user_id: "9010b6bc-c133-404f-a11e-47c8c6bff908"
+                  start_date: "08-2025"
+                  end_date: "12-2025"
+      responses:
+        "200":
+          description: Успех - возвращает обновлённую подписку (в обёртке Response)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ResponseSubscription"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "422":
+          $ref: "#/components/responses/ValidationError"
+        "500":
+          $ref: "#/components/responses/ServerError"
+
+    delete:
+      summary: Удалить подписку
+      operationId: DeleteSubscription
+      parameters:
+        - $ref: "#/components/parameters/id"
+      responses:
+        "204":
+          description: No Content - успешно удалено
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/ServerError"
+
+components:
+  parameters:
+    id:
+      name: id
+      in: path
+      required: true
+      schema:
+        type: integer
+      description: ID подписки
+
+  schemas:
+    Response:
+      type: object
+      properties:
+        status:
+          type: integer
+          example: 200
+        message:
+          type: string
+          example: "success"
+        data:
+          nullable: true
+          description: "Данные ответа (структура зависит от эндпоинта)"
+    ValidationErr:
+      type: object
+      properties:
+        field:
+          type: string
+          example: "StartDate"
+        tag:
+          type: string
+          example: "required"
+        value:
+          nullable: true
+          example: "08-2025"
+
+    Subscription:
+      type: object
+      properties:
+        id:
+          type: integer
+          example: 1
+        service_name:
+          type: string
+          example: "Yandex Plus"
+        price:
+          type: integer
+          example: 400
+        user_id:
+          type: string
+          format: uuid
+          example: "9010b6bc-c133-404f-a11e-47c8c6bff908"
+        start_date:
+          type: string
+          description: "Формат MM-YYYY (например 08-2025)"
+          pattern: '^(0[1-9]|1[0-2])-(\d{4})$'
+          example: "08-2025"
+        end_date:
+          type: string
+          nullable: true
+          description: "Формат MM-YYYY или null"
+          pattern: '^(0[1-9]|1[0-2])-(\d{4})$'
+          example: "10-2025"
+
+    CreateSubscriptionPayload:
+      type: object
+      required:
+        - service_name
+        - price
+        - user_id
+        - start_date
+      properties:
+        service_name:
+          type: string
+          example: "Yandex Plus"
+        price:
+          type: integer
+          example: 400
+        user_id:
+          type: string
+          format: uuid
+          example: "9010b6bc-c133-404f-a11e-47c8c6bff908"
+        start_date:
+          type: string
+          description: "Формат MM-YYYY (валидируется пользовательским mm_yyyy)"
+          pattern: '^(0[1-9]|1[0-2])-(\d{4})$'
+          example: "08-2025"
+        end_date:
+          type: string
+          nullable: true
+          description: "Опционально. Формат MM-YYYY"
+          pattern: '^(0[1-9]|1[0-2])-(\d{4})$'
+          example: "10-2025"
+
+    UpdateSubscriptionPayload:
+      allOf:
+        - $ref: "#/components/schemas/CreateSubscriptionPayload"
+      description: "То же, что и Create, используется для обновления"
+
+    ListData:
+      type: object
+      properties:
+        subscriptions:
+          type: array
+          items:
+            $ref: "#/components/schemas/Subscription"
+        total:
+          type: integer
+          example: 123
+
+    ResponseCreatedId:
+      allOf:
+        - $ref: "#/components/schemas/Response"
+        - type: object
+          properties:
+            status:
+              type: integer
+              example: 201
+            data:
+              type: object
+              properties:
+                id:
+                  type: integer
+                  example: 1
+
+    ResponseSubscription:
+      allOf:
+        - $ref: "#/components/schemas/Response"
+        - type: object
+          properties:
+            data:
+              $ref: "#/components/schemas/Subscription"
+
+    ResponseList:
+      allOf:
+        - $ref: "#/components/schemas/Response"
+        - type: object
+          properties:
+            data:
+              $ref: "#/components/schemas/ListData"
+
+  responses:
+    BadRequest:
+      description: Bad Request - неверный формат запроса
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Response"
+          examples:
+            invalid-json:
+              value:
+                status: 400
+                message: "Bad request"
+                data: null
+
+    ValidationError:
+      description: Validation error - поле(я) не прошли валидацию
+      content:
+        application/json:
+          schema:
+            allOf:
+              - $ref: "#/components/schemas/Response"
+              - type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/ValidationErr"
+          examples:
+            validation:
+              value:
+                status: 400
+                message: "validation error"
+                data:
+                  - field: "start_date"
+                    tag: "mm_yyyy"
+                    value: "08/2025"
+
+    NotFound:
+      description: Not Found
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Response"
+          examples:
+            notfound:
+              value:
+                status: 404
+                message: "Not found"
+                data: null
+
+    ServerError:
+      description: Internal Server Error
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Response"
+          examples:
+            server:
+              value:
+                status: 500
+                message: "Internal server error"
+                data: null
