@@ -3,6 +3,8 @@ package handlers_test
 import (
 	"database/sql"
 	"encoding/json"
+	"io"
+	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -26,6 +28,7 @@ import (
 
 func setupTest(t *testing.T) (*handlers.SubscriptionHandler, *mock_storage.MockSubscriptionStorage) {
 	t.Helper()
+	slog.SetDefault(slog.New(slog.NewJSONHandler(io.Discard, nil)))
 
 	ctrl := gomock.NewController(t)
 	t.Cleanup(ctrl.Finish)
@@ -68,6 +71,30 @@ func TestCreate(t *testing.T) {
 	handler.Create(w, r)
 
 	assert.Equal(t, http.StatusCreated, w.Code)
+}
+
+func TestCreateWrongUserID(t *testing.T) {
+	handler, mockedSubscriptionStorage := setupTest(t)
+
+	mockedSubscriptionStorage.EXPECT().
+		Create(gomock.Any(), gomock.Any()).
+		Times(0)
+
+	body := `{
+		"service_name": "test",
+		"start_date": "01-2006",
+		"end_date": "01-2006",
+		"price": 100,
+		"user_id": "42"
+	}`
+
+	w := httptest.NewRecorder()
+	r := httptest.NewRequest(http.MethodPost, "/subscriptions", strings.NewReader(body))
+	r.Header.Set("Content-Type", "application/json")
+
+	handler.Create(w, r)
+
+	assert.Equal(t, http.StatusBadRequest, w.Code)
 }
 
 func TestGet(t *testing.T) {
