@@ -133,7 +133,7 @@ func (s *PostgresSubscriptionStorage) List(ctx context.Context, userID, serviceN
 	// 	args = append(args, offset)
 	// }
 
-	sb := sqlbuilder.Select("id", "service_name", "price", "user_id", "start_date", "end_date")
+	sb := sqlbuilder.Select("id", "service_name", "price", "user_id", "start_date", "end_date").From("subscriptions")
 
 	if userID != "" {
 		sb.Where(sb.Equal("user_id", userID))
