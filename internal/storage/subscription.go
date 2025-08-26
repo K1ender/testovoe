@@ -5,7 +5,6 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
-	"strings"
 	"testovoe/internal/models"
 	"testovoe/internal/utils"
 	"time"
@@ -37,7 +36,7 @@ func NewPostgresSubscriptionStorage(db *sql.DB) SubscriptionStorage {
 func (s *PostgresSubscriptionStorage) Create(ctx context.Context, sub *models.Subscription) (int, error) {
 	var id int
 	// query := `INSERT INTO subscriptions (service_name, price, user_id, start_date, end_date) VALUES ($1, $2, $3, $4, $5) RETURNING id`
-	query, args := sqlbuilder.InsertInto("subscription").
+	query, args := sqlbuilder.PostgreSQL.NewInsertBuilder().InsertInto("subscriptions").
 		Cols("service_name", "price", "user_id", "start_date", "end_date").
 		Values(
 			sub.ServiceName,
@@ -56,7 +55,7 @@ func (s *PostgresSubscriptionStorage) Create(ctx context.Context, sub *models.Su
 }
 
 func (s *PostgresSubscriptionStorage) Get(ctx context.Context, id int) (*models.Subscription, error) {
-	query, args := sqlbuilder.Select("id", "service_name", "price", "user_id", "start_date", "end_date").
+	query, args := sqlbuilder.PostgreSQL.NewSelectBuilder().Select("id", "service_name", "price", "user_id", "start_date", "end_date").
 		From("subscriptions").
 		Where(sqlbuilder.NewCond().Equal("id", id)).
 		Build()
@@ -74,7 +73,7 @@ func (s *PostgresSubscriptionStorage) Get(ctx context.Context, id int) (*models.
 }
 
 func (s *PostgresSubscriptionStorage) Update(ctx context.Context, id int, sub *models.Subscription) error {
-	ub := sqlbuilder.Update("subscriptions")
+	ub := sqlbuilder.PostgreSQL.NewUpdateBuilder().Update("subscriptions")
 	ub.Set(
 		ub.Assign("service_name", sub.ServiceName),
 		ub.Assign("price", sub.Price),
@@ -107,40 +106,20 @@ func (s *PostgresSubscriptionStorage) Delete(ctx context.Context, id int) error 
 }
 
 func (s *PostgresSubscriptionStorage) List(ctx context.Context, userID, serviceName string, limit, offset int) ([]models.Subscription, error) {
-	// q := strings.Builder{}
-	// q.WriteString(`SELECT id, service_name, price, user_id, start_date, end_date FROM subscriptions WHERE 1=1`)
-	// args := []any{}
-	// param := 1
+	sb := sqlbuilder.PostgreSQL.NewSelectBuilder()
+	sb.Select("id", "service_name", "price", "user_id", "start_date", "end_date").From("subscriptions")
 
-	// if userID != "" {
-	// 	q.WriteString(fmt.Sprintf(" AND user_id=$%d", param))
-	// 	args = append(args, userID)
-	// 	param++
-	// }
-	// if serviceName != "" {
-	// 	q.WriteString(fmt.Sprintf(" AND LOWER(service_name) = LOWER($%d)", param))
-	// 	args = append(args, serviceName)
-	// 	param++
-	// }
-	// q.WriteString(" ORDER BY id DESC")
-	// if limit > 0 {
-	// 	q.WriteString(fmt.Sprintf(" LIMIT $%d", param))
-	// 	args = append(args, limit)
-	// 	param++
-	// }
-	// if offset > 0 {
-	// 	q.WriteString(fmt.Sprintf(" OFFSET $%d", param))
-	// 	args = append(args, offset)
-	// }
-
-	sb := sqlbuilder.Select("id", "service_name", "price", "user_id", "start_date", "end_date").From("subscriptions")
-
+	var conds []string
 	if userID != "" {
-		sb.Where(sb.Equal("user_id", userID))
+		conds = append(conds, sb.Equal("user_id", userID))
 	}
 	if serviceName != "" {
-		sb.Where(sb.Equal("service_name", serviceName))
+		conds = append(conds, sb.Equal("service_name", serviceName))
 	}
+	if len(conds) > 0 {
+		sb.Where(sb.And(conds...))
+	}
+
 	sb.OrderBy("id").Desc()
 	if limit > 0 {
 		sb.Limit(limit)
@@ -148,6 +127,7 @@ func (s *PostgresSubscriptionStorage) List(ctx context.Context, userID, serviceN
 	if offset > 0 {
 		sb.Offset(offset)
 	}
+
 	q, args := sb.Build()
 
 	var out []models.Subscription
@@ -164,7 +144,9 @@ func (s *PostgresSubscriptionStorage) List(ctx context.Context, userID, serviceN
 		}
 		out = append(out, sub)
 	}
-
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
 	return out, nil
 }
 
@@ -173,30 +155,30 @@ func (s *PostgresSubscriptionStorage) TotalForPeriod(
 	periodStart, periodEnd time.Time,
 	userID, serviceName string,
 ) (int64, error) {
-
 	peEnd := periodEnd.AddDate(0, 1, 0).Add(-time.Nanosecond)
 
-	sb := sqlbuilder.NewSelectBuilder()
+	sb := sqlbuilder.PostgreSQL.NewSelectBuilder()
 	sb.Select("id", "service_name", "price", "user_id", "start_date", "end_date").
 		From("subscriptions").
 		Where(sb.LessEqualThan("start_date", peEnd)).
 		Where(sb.Or(sb.IsNull("end_date"), sb.GreaterEqualThan("end_date", periodStart))).
-		OrderBy("id DESC")
+		OrderBy("id").Desc()
 
 	if userID != "" {
 		u, err := uuid.Parse(userID)
 		if err != nil {
 			return 0, fmt.Errorf("invalid userID: %w", err)
 		}
-		sb.Where(sb.Equal("user_id", u))
+		sb.Where(sb.Equal("user_id", u.String()))
 	}
 
 	if serviceName != "" {
-		sb.Where(sb.Equal("LOWER(service_name)", strings.ToLower(serviceName)))
+		sb.Where(sb.Equal("service_name", serviceName))
 	}
 
-	sql, args := sb.Build()
-	rows, err := s.db.QueryContext(ctx, sql, args...)
+	sqlStr, args := sb.Build()
+
+	rows, err := s.db.QueryContext(ctx, sqlStr, args...)
 	if err != nil {
 		return 0, err
 	}
