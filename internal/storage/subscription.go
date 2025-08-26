@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/huandu/go-sqlbuilder"
 )
 
 type SubscriptionStorage interface {
@@ -34,9 +35,18 @@ func NewPostgresSubscriptionStorage(db *sql.DB) SubscriptionStorage {
 
 func (s *PostgresSubscriptionStorage) Create(ctx context.Context, sub *models.Subscription) (int, error) {
 	var id int
-	query := `INSERT INTO subscriptions (service_name, price, user_id, start_date, end_date) VALUES ($1, $2, $3, $4, $5) RETURNING id`
+	// query := `INSERT INTO subscriptions (service_name, price, user_id, start_date, end_date) VALUES ($1, $2, $3, $4, $5) RETURNING id`
+	query, args := sqlbuilder.InsertInto("subscription").
+		Cols("service_name", "price", "user_id", "start_date", "end_date").
+		Values(
+			sub.ServiceName,
+			sub.Price,
+			sub.UserID,
+			sub.StartDate,
+			sub.EndDate,
+		).Returning("id").Build()
 
-	err := s.db.QueryRowContext(ctx, query, sub.ServiceName, sub.Price, sub.UserID, sub.StartDate, sub.EndDate).Scan(&id)
+	err := s.db.QueryRowContext(ctx, query, args...).Scan(&id)
 	if err != nil {
 		return 0, err
 	}
@@ -45,8 +55,11 @@ func (s *PostgresSubscriptionStorage) Create(ctx context.Context, sub *models.Su
 }
 
 func (s *PostgresSubscriptionStorage) Get(ctx context.Context, id int) (*models.Subscription, error) {
-	query := `SELECT id, service_name, price, user_id, start_date, end_date FROM subscriptions WHERE id = $1`
-	row := s.db.QueryRowContext(ctx, query, id)
+	query, args := sqlbuilder.Select("id", "service_name", "price", "user_id", "start_date", "end_date").
+		From("subscriptions").
+		Where(sqlbuilder.NewCond().Equal("id", id)).
+		Build()
+	row := s.db.QueryRowContext(ctx, query, args...)
 
 	var sub models.Subscription
 	if err := row.Scan(&sub.ID, &sub.ServiceName, &sub.Price, &sub.UserID, &sub.StartDate, &sub.EndDate); err != nil {
@@ -60,9 +73,17 @@ func (s *PostgresSubscriptionStorage) Get(ctx context.Context, id int) (*models.
 }
 
 func (s *PostgresSubscriptionStorage) Update(ctx context.Context, id int, sub *models.Subscription) error {
-	q := `UPDATE subscriptions SET service_name = $1, price = $2, user_id = $3, start_date = $4, end_date = $5 WHERE id = $6`
+	ub := sqlbuilder.Update("subscriptions")
+	ub.Set(
+		ub.Assign("service_name", sub.ServiceName),
+		ub.Assign("price", sub.Price),
+		ub.Assign("user_id", sub.UserID),
+		ub.Assign("start_date", sub.StartDate),
+		ub.Assign("end_date", sub.EndDate),
+	).Where(ub.Equal("id", id))
+	q, args := ub.Build()
 
-	res, err := s.db.ExecContext(ctx, q, sub.ServiceName, sub.Price, sub.UserID, sub.StartDate, sub.EndDate, id)
+	res, err := s.db.ExecContext(ctx, q, args...)
 	if err != nil {
 		return err
 	}
@@ -85,34 +106,51 @@ func (s *PostgresSubscriptionStorage) Delete(ctx context.Context, id int) error 
 }
 
 func (s *PostgresSubscriptionStorage) List(ctx context.Context, userID, serviceName string, limit, offset int) ([]models.Subscription, error) {
-	q := strings.Builder{}
-	q.WriteString(`SELECT id, service_name, price, user_id, start_date, end_date FROM subscriptions WHERE 1=1`)
-	args := []any{}
-	param := 1
+	// q := strings.Builder{}
+	// q.WriteString(`SELECT id, service_name, price, user_id, start_date, end_date FROM subscriptions WHERE 1=1`)
+	// args := []any{}
+	// param := 1
+
+	// if userID != "" {
+	// 	q.WriteString(fmt.Sprintf(" AND user_id=$%d", param))
+	// 	args = append(args, userID)
+	// 	param++
+	// }
+	// if serviceName != "" {
+	// 	q.WriteString(fmt.Sprintf(" AND LOWER(service_name) = LOWER($%d)", param))
+	// 	args = append(args, serviceName)
+	// 	param++
+	// }
+	// q.WriteString(" ORDER BY id DESC")
+	// if limit > 0 {
+	// 	q.WriteString(fmt.Sprintf(" LIMIT $%d", param))
+	// 	args = append(args, limit)
+	// 	param++
+	// }
+	// if offset > 0 {
+	// 	q.WriteString(fmt.Sprintf(" OFFSET $%d", param))
+	// 	args = append(args, offset)
+	// }
+
+	sb := sqlbuilder.Select("id", "service_name", "price", "user_id", "start_date", "end_date")
 
 	if userID != "" {
-		q.WriteString(fmt.Sprintf(" AND user_id=$%d", param))
-		args = append(args, userID)
-		param++
+		sb.Where(sb.Equal("user_id", userID))
 	}
 	if serviceName != "" {
-		q.WriteString(fmt.Sprintf(" AND LOWER(service_name) = LOWER($%d)", param))
-		args = append(args, serviceName)
-		param++
+		sb.Where(sb.Equal("service_name", serviceName))
 	}
-	q.WriteString(" ORDER BY id DESC")
+	sb.OrderBy("id").Desc()
 	if limit > 0 {
-		q.WriteString(fmt.Sprintf(" LIMIT $%d", param))
-		args = append(args, limit)
-		param++
+		sb.Limit(limit)
 	}
 	if offset > 0 {
-		q.WriteString(fmt.Sprintf(" OFFSET $%d", param))
-		args = append(args, offset)
+		sb.Offset(offset)
 	}
+	q, args := sb.Build()
 
 	var out []models.Subscription
-	rows, err := s.db.QueryContext(ctx, q.String(), args...)
+	rows, err := s.db.QueryContext(ctx, q, args...)
 	if err != nil {
 		return nil, err
 	}
@@ -129,41 +167,35 @@ func (s *PostgresSubscriptionStorage) List(ctx context.Context, userID, serviceN
 	return out, nil
 }
 
-func (s *PostgresSubscriptionStorage) TotalForPeriod(ctx context.Context, periodStart, periodEnd time.Time, userID, serviceName string) (int64, error) {
+func (s *PostgresSubscriptionStorage) TotalForPeriod(
+	ctx context.Context,
+	periodStart, periodEnd time.Time,
+	userID, serviceName string,
+) (int64, error) {
+
 	peEnd := periodEnd.AddDate(0, 1, 0).Add(-time.Nanosecond)
 
-	var sb strings.Builder
-	args := make([]any, 0, 4)
-	param := 1
-
-	sb.WriteString("SELECT id, service_name, price, user_id, start_date, end_date FROM subscriptions WHERE ")
-	sb.WriteString(fmt.Sprintf("start_date <= $%d", param))
-	args = append(args, peEnd)
-	param++
-
-	sb.WriteString(fmt.Sprintf(" AND (end_date IS NULL OR end_date >= $%d)", param))
-	args = append(args, periodStart)
-	param++
+	sb := sqlbuilder.NewSelectBuilder()
+	sb.Select("id", "service_name", "price", "user_id", "start_date", "end_date").
+		From("subscriptions").
+		Where(sb.LessEqualThan("start_date", peEnd)).
+		Where(sb.Or(sb.IsNull("end_date"), sb.GreaterEqualThan("end_date", periodStart))).
+		OrderBy("id DESC")
 
 	if userID != "" {
 		u, err := uuid.Parse(userID)
 		if err != nil {
 			return 0, fmt.Errorf("invalid userID: %w", err)
 		}
-		sb.WriteString(fmt.Sprintf(" AND user_id = $%d", param))
-		args = append(args, u)
-		param++
+		sb.Where(sb.Equal("user_id", u))
 	}
 
 	if serviceName != "" {
-		sb.WriteString(fmt.Sprintf(" AND LOWER(service_name) = LOWER($%d)", param))
-		args = append(args, serviceName)
-		param++
+		sb.Where(sb.Equal("LOWER(service_name)", strings.ToLower(serviceName)))
 	}
 
-	sb.WriteString(" ORDER BY id DESC")
-
-	rows, err := s.db.QueryContext(ctx, sb.String(), args...)
+	sql, args := sb.Build()
+	rows, err := s.db.QueryContext(ctx, sql, args...)
 	if err != nil {
 		return 0, err
 	}
