@@ -14,6 +14,7 @@ import (
 	"github.com/huandu/go-sqlbuilder"
 )
 
+//go:generate mockgen -source=subscription.go -destination=mocks/subscription.go
 type SubscriptionStorage interface {
 	Create(ctx context.Context, sub *models.Subscription) (int, error)
 	Get(ctx context.Context, id int) (*models.Subscription, error)
