@@ -280,7 +280,13 @@ func (h *SubscriptionHandler) List(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	total, err := h.store.Subscription.TotalForPeriod(ctx, time.Now(), time.Now(), userID, serviceName)
+	userUUID, err := uuid.Parse(userID)
+	if err != nil {
+		slog.WarnContext(ctx, "parse user id", "error", err)
+		userUUID = uuid.Nil
+	}
+
+	total, err := h.store.Subscription.TotalForPeriod(ctx, time.Now(), time.Now(), userUUID, serviceName)
 	if err != nil {
 		slog.ErrorContext(ctx, "list subscriptions", "error", err)
 		response.ServerError(w, "Internal server error")

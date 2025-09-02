@@ -4,13 +4,17 @@ import (
 	"context"
 	"database/sql"
 	"errors"
-	"fmt"
 	"testovoe/internal/models"
 	"testovoe/internal/utils"
 	"time"
 
 	"github.com/google/uuid"
 	"github.com/huandu/go-sqlbuilder"
+)
+
+const (
+	MaxFutureDate = 3000
+	MaxLimit      = 1000
 )
 
 //go:generate mockgen -source=subscription.go -destination=mocks/subscription.go
@@ -20,7 +24,12 @@ type SubscriptionStorage interface {
 	Update(ctx context.Context, id int, sub *models.Subscription) error
 	Delete(ctx context.Context, id int) error
 	List(ctx context.Context, userID, serviceName string, limit, offset int) ([]models.Subscription, error)
-	TotalForPeriod(ctx context.Context, periodStart, periodEnd time.Time, userID, serviceName string) (int64, error)
+	TotalForPeriod(
+		ctx context.Context,
+		periodStart, periodEnd time.Time,
+		userID uuid.UUID,
+		serviceName string,
+	) (int64, error)
 }
 
 type PostgresSubscriptionStorage struct {
@@ -101,11 +110,27 @@ func (s *PostgresSubscriptionStorage) Update(ctx context.Context, id int, sub *m
 
 func (s *PostgresSubscriptionStorage) Delete(ctx context.Context, id int) error {
 	query := `DELETE FROM subscriptions WHERE id = $1`
-	_, err := s.db.ExecContext(ctx, query, id)
-	return err
+	res, err := s.db.ExecContext(ctx, query, id)
+	if err != nil {
+		return err
+	}
+
+	n, err := res.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if n == 0 {
+		return ErrNotFound
+	}
+
+	return nil
 }
 
 func (s *PostgresSubscriptionStorage) List(ctx context.Context, userID, serviceName string, limit, offset int) ([]models.Subscription, error) {
+	if limit > MaxLimit {
+		limit = MaxLimit
+	}
+
 	sb := sqlbuilder.PostgreSQL.NewSelectBuilder()
 	sb.Select("id", "service_name", "price", "user_id", "start_date", "end_date").From("subscriptions")
 
@@ -153,23 +178,20 @@ func (s *PostgresSubscriptionStorage) List(ctx context.Context, userID, serviceN
 func (s *PostgresSubscriptionStorage) TotalForPeriod(
 	ctx context.Context,
 	periodStart, periodEnd time.Time,
-	userID, serviceName string,
+	userID uuid.UUID, // Изменить тип
+	serviceName string,
 ) (int64, error) {
 	peEnd := periodEnd.AddDate(0, 1, 0).Add(-time.Nanosecond)
 
 	sb := sqlbuilder.PostgreSQL.NewSelectBuilder()
-	sb.Select("id", "service_name", "price", "user_id", "start_date", "end_date").
+	sb.Select("start_date", "end_date", "price").
 		From("subscriptions").
 		Where(sb.LessEqualThan("start_date", peEnd)).
 		Where(sb.Or(sb.IsNull("end_date"), sb.GreaterEqualThan("end_date", periodStart))).
-		OrderBy("id").Desc()
+		Desc()
 
-	if userID != "" {
-		u, err := uuid.Parse(userID)
-		if err != nil {
-			return 0, fmt.Errorf("invalid userID: %w", err)
-		}
-		sb.Where(sb.Equal("user_id", u.String()))
+	if userID != uuid.Nil {
+		sb.Where(sb.Equal("user_id", userID.String()))
 	}
 
 	if serviceName != "" {
@@ -191,7 +213,7 @@ func (s *PostgresSubscriptionStorage) TotalForPeriod(
 			return 0, err
 		}
 
-		subEnd := time.Date(3000, 1, 1, 0, 0, 0, 0, time.UTC)
+		subEnd := time.Date(MaxFutureDate, 1, 1, 0, 0, 0, 0, time.UTC)
 		if sub.EndDate.Valid {
 			subEnd = sub.EndDate.Time
 		}

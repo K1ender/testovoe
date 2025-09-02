@@ -15,6 +15,7 @@ import (
 	models "testovoe/internal/models"
 	time "time"
 
+	uuid "github.com/google/uuid"
 	gomock "go.uber.org/mock/gomock"
 )
 
@@ -102,7 +103,7 @@ func (mr *MockSubscriptionStorageMockRecorder) List(ctx, userID, serviceName, li
 }
 
 // TotalForPeriod mocks base method.
-func (m *MockSubscriptionStorage) TotalForPeriod(ctx context.Context, periodStart, periodEnd time.Time, userID, serviceName string) (int64, error) {
+func (m *MockSubscriptionStorage) TotalForPeriod(ctx context.Context, periodStart, periodEnd time.Time, userID uuid.UUID, serviceName string) (int64, error) {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "TotalForPeriod", ctx, periodStart, periodEnd, userID, serviceName)
 	ret0, _ := ret[0].(int64)
