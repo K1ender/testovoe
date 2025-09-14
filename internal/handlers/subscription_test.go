@@ -206,3 +206,112 @@ func TestList(t *testing.T) {
 	assert.Equal(t, "test", resp.Data.Subscriptions[0].ServiceName)
 	assert.Equal(t, http.StatusOK, w.Code)
 }
+
+func TestUpdateInvalidID(t *testing.T) {
+	handler, _ := setupTest(t)
+
+	body := `{
+		"service_name": "test",
+		"start_date": "01-2006",
+		"end_date": "01-2006",
+		"price": 100,
+		"user_id": "550e8400-e29b-41d4-a716-446655440000"
+	}`
+
+	w := httptest.NewRecorder()
+	r := httptest.NewRequest(http.MethodPut, "/subscriptions/invalid", strings.NewReader(body))
+	r.Header.Set("Content-Type", "application/json")
+
+	mux := http.NewServeMux()
+	mux.HandleFunc("PUT /subscriptions/{id}", handler.Update)
+
+	mux.ServeHTTP(w, r)
+
+	assert.Equal(t, http.StatusBadRequest, w.Code)
+}
+
+func TestCreateInvalidData(t *testing.T) {
+	handler, mockedSubscriptionStorage := setupTest(t)
+
+	mockedSubscriptionStorage.EXPECT().
+		Create(gomock.Any(), gomock.Any()).
+		Times(0)
+
+	body := `{
+		"service_name": "",
+		"start_date": "13-2006",
+		"price": -5
+	}`
+
+	w := httptest.NewRecorder()
+	r := httptest.NewRequest(http.MethodPost, "/subscriptions", strings.NewReader(body))
+	r.Header.Set("Content-Type", "application/json")
+
+	handler.Create(w, r)
+
+	assert.Equal(t, http.StatusBadRequest, w.Code)
+}
+
+func TestDeleteNotFound(t *testing.T) {
+	handler, mockedSubscriptionStorage := setupTest(t)
+
+	mockedSubscriptionStorage.EXPECT().
+		Delete(gomock.Any(), gomock.Any()).
+		Return(storage.ErrNotFound).
+		Times(1)
+
+	w := httptest.NewRecorder()
+	r := httptest.NewRequest(http.MethodDelete, "/subscriptions/999", nil)
+
+	mux := http.NewServeMux()
+	mux.HandleFunc("DELETE /subscriptions/{id}", handler.Delete)
+
+	mux.ServeHTTP(w, r)
+
+	assert.Equal(t, http.StatusNotFound, w.Code)
+}
+
+func TestGetNotFound(t *testing.T) {
+	handler, mockedSubscriptionStorage := setupTest(t)
+
+	mockedSubscriptionStorage.EXPECT().
+		Get(gomock.Any(), gomock.Any()).
+		Return(nil, storage.ErrNotFound).
+		Times(1)
+
+	w := httptest.NewRecorder()
+	r := httptest.NewRequest(http.MethodGet, "/subscriptions/999", nil)
+
+	mux := http.NewServeMux()
+	mux.HandleFunc("GET /subscriptions/{id}", handler.Get)
+
+	mux.ServeHTTP(w, r)
+
+	assert.Equal(t, http.StatusNotFound, w.Code)
+}
+
+func TestUpdateInvalidDateFormat(t *testing.T) {
+	handler, mockedSubscriptionStorage := setupTest(t)
+
+	mockedSubscriptionStorage.EXPECT().
+		Update(gomock.Any(), gomock.Any(), gomock.Any()).
+		Times(0)
+
+	body := `{
+		"service_name": "test",
+		"start_date": "2006-01-02",
+		"price": 100,
+		"user_id": "550e8400-e29b-41d4-a716-446655440000"
+	}`
+
+	w := httptest.NewRecorder()
+	r := httptest.NewRequest(http.MethodPut, "/subscriptions/1", strings.NewReader(body))
+	r.Header.Set("Content-Type", "application/json")
+
+	mux := http.NewServeMux()
+	mux.HandleFunc("PUT /subscriptions/{id}", handler.Update)
+
+	mux.ServeHTTP(w, r)
+
+	assert.Equal(t, http.StatusBadRequest, w.Code)
+}

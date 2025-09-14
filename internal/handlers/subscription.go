@@ -21,6 +21,7 @@ type SubscriptionHandler struct {
 	validate *validator.Validate
 }
 
+
 func NewSubscriptionHandler(
 	store *storage.Storage,
 	validate *validator.Validate,
@@ -45,6 +46,9 @@ type CreateSubscriptionPayload struct {
 	EndDate     *string   `json:"end_date,omitempty" validate:"omitempty,mm_yyyy"`
 }
 
+// Create handles the creation of a new subscription.
+// It reads and validates the request payload, parses the start and end dates,
+// and stores the subscription in the database. Returns the ID of the created subscription.
 func (h *SubscriptionHandler) Create(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	slog.InfoContext(ctx, "create subscription", "method", r.Method)
@@ -109,6 +113,12 @@ func (h *SubscriptionHandler) Create(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// Get retrieves a subscription by its ID and returns it in the response.
+// It parses the subscription ID from the URL path, fetches the subscription from the store,
+// formats the dates, and sends the response.
+// If the ID is invalid, it returns a bad request error.
+// If the subscription is not found, it returns a not found error.
+// If there is an internal server error, it returns a server error.
 func (h *SubscriptionHandler) Get(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	id := r.PathValue("id")
@@ -153,6 +163,11 @@ type UpdateSubscriptionPayload struct {
 	EndDate     *string   `json:"end_date,omitempty" validate:"omitempty,mm_yyyy"`
 }
 
+// Update handles the HTTP request to update an existing subscription.
+// It parses the subscription ID from the URL, decodes the JSON payload,
+// validates the payload, parses the start and end dates, and updates
+// the subscription in the database. It returns appropriate HTTP responses
+// based on the outcome of these operations.
 func (h *SubscriptionHandler) Update(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	id := r.PathValue("id")
@@ -230,6 +245,13 @@ func (h *SubscriptionHandler) Update(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// Delete removes a subscription by its ID.
+// It extracts the ID from the request path, converts it to an integer,
+// and attempts to delete the corresponding subscription from the store.
+// If the ID is invalid, it responds with a bad request error.
+// If the subscription is not found, it responds with a not found error.
+// If an internal error occurs during deletion, it responds with a server error.
+// On successful deletion, it responds with a no content status.
 func (h *SubscriptionHandler) Delete(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	id := r.PathValue("id")
@@ -252,6 +274,17 @@ func (h *SubscriptionHandler) Delete(w http.ResponseWriter, r *http.Request) {
 	response.NoContent(w)
 }
 
+// List handles the HTTP request to list subscriptions based on query parameters.
+// It retrieves subscriptions from the store and returns them in a structured JSON response.
+// Query parameters:
+//   - user_id: filters subscriptions by user ID
+//   - service_name: filters subscriptions by service name
+//   - limit: limits the number of subscriptions returned (default: 0, meaning no limit)
+//   - offset: skips the specified number of subscriptions (default: 0)
+//
+// If limit or offset are negative, they are reset to 0.
+// If userID is invalid, it defaults to uuid.Nil.
+// If an error occurs during processing, an appropriate HTTP error response is sent.
 func (h *SubscriptionHandler) List(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	userID := r.URL.Query().Get("user_id")
