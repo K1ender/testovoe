@@ -9,7 +9,9 @@ import (
 	"testovoe/internal/config"
 	"testovoe/internal/handlers"
 	"testovoe/internal/storage"
+	"testovoe/internal/utils"
 	"testovoe/internal/validators"
+    "time"
 
 	"github.com/go-playground/validator/v10"
 	_ "github.com/lib/pq"
@@ -43,6 +45,20 @@ func (a *Api) Run() error {
 	}
 	store := storage.NewPostgresStorage(db)
 
+	// Tune database connection pool for better throughput and latency under load
+	if a.cfg.Database.MaxOpenConns > 0 {
+		db.SetMaxOpenConns(a.cfg.Database.MaxOpenConns)
+	}
+	if a.cfg.Database.MaxIdleConns > 0 {
+		db.SetMaxIdleConns(a.cfg.Database.MaxIdleConns)
+	}
+	if a.cfg.Database.ConnMaxLifetimeSeconds > 0 {
+		db.SetConnMaxLifetime(time.Duration(a.cfg.Database.ConnMaxLifetimeSeconds) * time.Second)
+	}
+	if a.cfg.Database.ConnMaxIdleTimeSeconds > 0 {
+		db.SetConnMaxIdleTime(time.Duration(a.cfg.Database.ConnMaxIdleTimeSeconds) * time.Second)
+	}
+
 	validate := validator.New(validator.WithRequiredStructEnabled())
 	validate.RegisterValidation("mm_yyyy", validators.MonthYearValidator)
 
@@ -53,12 +69,19 @@ func (a *Api) Run() error {
 	mux.HandleFunc("DELETE /subscriptions/{id}", subHandler.Delete)
 	mux.HandleFunc("GET /subscriptions", subHandler.List)
 
+	// Wrap the mux with gzip compression to reduce payload sizes
+	handler := utils.GzipMiddleware(mux)
+
+	srv := &http.Server{
+		Addr:              net.JoinHostPort(a.cfg.Api.Host, fmt.Sprint(a.cfg.Api.Port)),
+		Handler:           handler,
+		ReadTimeout:       10 * time.Second,
+		ReadHeaderTimeout: 5 * time.Second,
+		WriteTimeout:      15 * time.Second,
+		IdleTimeout:       60 * time.Second,
+		MaxHeaderBytes:    1 << 20,
+	}
+
 	slog.Info("start server", "host", a.cfg.Api.Host, "port", a.cfg.Api.Port)
-	return http.ListenAndServe(
-		net.JoinHostPort(
-			a.cfg.Api.Host,
-			fmt.Sprint(a.cfg.Api.Port),
-		),
-		mux,
-	)
+	return srv.ListenAndServe()
 }
