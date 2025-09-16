@@ -45,20 +45,6 @@ func (a *Api) Run() error {
 	}
 	store := storage.NewPostgresStorage(db)
 
-	// Tune database connection pool for better throughput and latency under load
-	if a.cfg.Database.MaxOpenConns > 0 {
-		db.SetMaxOpenConns(a.cfg.Database.MaxOpenConns)
-	}
-	if a.cfg.Database.MaxIdleConns > 0 {
-		db.SetMaxIdleConns(a.cfg.Database.MaxIdleConns)
-	}
-	if a.cfg.Database.ConnMaxLifetimeSeconds > 0 {
-		db.SetConnMaxLifetime(time.Duration(a.cfg.Database.ConnMaxLifetimeSeconds) * time.Second)
-	}
-	if a.cfg.Database.ConnMaxIdleTimeSeconds > 0 {
-		db.SetConnMaxIdleTime(time.Duration(a.cfg.Database.ConnMaxIdleTimeSeconds) * time.Second)
-	}
-
 	validate := validator.New(validator.WithRequiredStructEnabled())
 	validate.RegisterValidation("mm_yyyy", validators.MonthYearValidator)
 
