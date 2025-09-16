@@ -187,8 +187,7 @@ func (s *PostgresSubscriptionStorage) TotalForPeriod(
 	sb.Select("start_date", "end_date", "price").
 		From("subscriptions").
 		Where(sb.LessEqualThan("start_date", peEnd)).
-		Where(sb.Or(sb.IsNull("end_date"), sb.GreaterEqualThan("end_date", periodStart))).
-		Desc()
+		Where(sb.Or(sb.IsNull("end_date"), sb.GreaterEqualThan("end_date", periodStart)))
 
 	if userID != uuid.Nil {
 		sb.Where(sb.Equal("user_id", userID.String()))
@@ -209,7 +208,7 @@ func (s *PostgresSubscriptionStorage) TotalForPeriod(
 	var total int64
 	for rows.Next() {
 		var sub models.Subscription
-		if err := rows.Scan(&sub.ID, &sub.ServiceName, &sub.Price, &sub.UserID, &sub.StartDate, &sub.EndDate); err != nil {
+		if err := rows.Scan(&sub.StartDate, &sub.EndDate, &sub.Price); err != nil {
 			return 0, err
 		}
 
